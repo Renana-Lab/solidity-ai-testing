@@ -1,5 +1,6 @@
-# USD per 1M tokens. PLACEHOLDER values: verify against Google's pricing page
-# before trusting any cost number.
+# USD per 1M tokens (paid tier, standard, prompts <= 200k tokens).
+# Source: https://ai.google.dev/gemini-api/docs/pricing, checked 2026-11-02.
+# Re-check periodically: prices change and models get retired.
 models:
   gemini-2.5-pro:
     input: 1.25
@@ -7,3 +8,10 @@ models:
   gemini-2.5-flash:
     input: 0.30
     output: 2.50
+  # Promotional price through 2026-12-31; becomes input 1.50 / output 7.50 from 2027-01-01.
+  gemini-3.8-flash:
+    input: 0.75
+    output: 3.75
+  gemini-3.1-pro-preview:
+    input: 2.00
+    output: 12.00

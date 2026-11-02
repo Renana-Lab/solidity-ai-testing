@@ -1,6 +1,7 @@
 # Default settings. Flags and env vars override these.
 model: gemini-2.5-pro
-flashModel: gemini-2.5-flash
+# gemini-2.5-flash returned 404 "no longer available to new users" on 2026-11-02.
+flashModel: gemini-3.8-flash
 temperature:
   audit: 0.2
   genTests: 0.4
