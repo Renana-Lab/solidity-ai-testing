@@ -79,6 +79,27 @@ describe("GeminiClient", () => {
     expect(line.retryReasons[0]).toMatch(/503 after \d+ms: overloaded/);
   });
 
+  it("fails at once, without retries, on a per-day quota", async () => {
+    let calls = 0;
+    const body = '{"error":{"message":"Quota exceeded ... limit: 20 ... Please retry in 21h55m34.7s.","details":[{"retryDelay":"78934s"}]}}';
+    const { c } = client(async () => {
+      calls++;
+      throw Object.assign(new Error(body), { status: 429 });
+    });
+    await expect(c.generate(req)).rejects.toThrow(/daily quota exhausted for model "m".*21h55m34s/);
+    expect(calls).toBe(1);
+  });
+
+  it("still retries an ordinary short 429", async () => {
+    let calls = 0;
+    const { c } = client(async () => {
+      if (++calls < 2) throw Object.assign(new Error('{"retryDelay":"5s"}'), { status: 429 });
+      return reply('{"ok":true}');
+    });
+    expect(await c.generate(req)).toEqual({ ok: true });
+    expect(calls).toBe(2);
+  });
+
   it("does not retry other 4xx errors", async () => {
     let calls = 0;
     const { c } = client(async () => {

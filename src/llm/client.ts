@@ -64,6 +64,16 @@ export class LlmApiError extends Error {
   }
 }
 
+/**
+ * A 429 that will not clear by waiting a few seconds: a per-day quota (free tier) or a very long
+ * retry delay. Retrying only wastes time, so this fails at once with a clear message.
+ */
+export function isDailyQuota(msg: string): boolean {
+  if (/PerDay|per day/i.test(msg)) return true;
+  const delay = msg.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/)?.[1];
+  return delay !== undefined && Number(delay) > 300;
+}
+
 /** The model returned JSON that did not match the schema, even after one retry. */
 export class LlmOutputError extends Error {
   constructor(message: string) {
@@ -189,6 +199,13 @@ export class GeminiClient implements LlmClient {
           const retryable = status === undefined || status === 429 || status >= 500;
           const msg = e instanceof Error ? e.message : String(e);
           if (!retryable) throw new LlmApiError(`Gemini API error ${status}: ${msg}`);
+          if (status === 429 && isDailyQuota(msg)) {
+            const resets = msg.match(/retry in ([0-9hms.]+)/i)?.[1];
+            throw new LlmApiError(
+              `Gemini daily quota exhausted for model "${this.opts.model}"${resets ? ` (resets in about ${resets.replace(/\.$/, "").replace(/\.\d+s$/, "s")})` : ""}. ` +
+                "This is usually the free tier (about 20 requests per day per model): use another model with --model, enable billing, or wait.",
+            );
+          }
           // A timeout can mean a 5-minute wait: retry it once, not maxRetries times.
           if (isTimeout(e) && ++timeouts > 1) throw new LlmApiError(`Gemini API timed out twice: ${msg}`);
           if (attempt >= this.maxRetries) throw new LlmApiError(`Gemini API failed after ${attempt + 1} attempts: ${msg}`);
