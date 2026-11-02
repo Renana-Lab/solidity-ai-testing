@@ -2,8 +2,10 @@
 # Models: default is the cheap one that proved itself on Counter.sol.
 # --flash is the same model (kept as a shortcut); --pro picks the strong, pricier one
 # for audits and PoCs, where reasoning matters.
-model: gemini-3.8-flash
-flashModel: gemini-3.8-flash
+# gemini-3.8-flash worked but was often overloaded (HTTP 503 "high demand") on 2026-11-02,
+# with calls taking 4+ minutes. gemini-3.6-flash has the same price and answered in 5s.
+model: gemini-3.6-flash
+flashModel: gemini-3.6-flash
 proModel: gemini-4-argon
 # gemini-2.5-flash returned 404 "no longer available to new users" on 2026-11-02.
 temperature:

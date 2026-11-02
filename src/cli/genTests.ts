@@ -102,6 +102,7 @@ export async function genTests(file: string, flags: GenTestsFlags): Promise<numb
   let summary: GenTestsSummary | null = null;
   let exitCode = 0;
   let budgetStopped = false;
+  let errorMessage: string | null = null;
 
   try {
     const workspace = new ForgeWorkspace(workDir, contractPath);
@@ -136,7 +137,8 @@ export async function genTests(file: string, flags: GenTestsFlags): Promise<numb
     } else {
       exitCode = 1;
     }
-    console.error(scrub(e instanceof Error ? e.message : String(e)));
+    errorMessage = scrub(e instanceof Error ? e.message : String(e));
+    console.error(errorMessage);
   } finally {
     if (!flags.keepWorkspace) rmSync(workDir, { recursive: true, force: true });
   }
@@ -151,7 +153,7 @@ export async function genTests(file: string, flags: GenTestsFlags): Promise<numb
   };
   writeFileSync(
     path.join(runDir, "run.json"),
-    JSON.stringify({ ...run, exitCode, gitSha: await gitSha(), flags, nodeVersion: process.version, startedAt: new Date(started).toISOString() }, null, 2),
+    JSON.stringify({ ...run, exitCode, error: errorMessage, gitSha: await gitSha(), flags, nodeVersion: process.version, startedAt: new Date(started).toISOString() }, null, 2),
   );
   writeFileSync(path.join(runDir, "report.md"), renderReport(run, summary));
 

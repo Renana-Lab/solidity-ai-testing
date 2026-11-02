@@ -41,7 +41,14 @@ export type Transport = (p: {
   temperature: number;
   jsonSchema: unknown;
   thinking?: ThinkingLevel;
-}) => Promise<{ text: string; inputTokens: number; outputTokens: number }>;
+}) => Promise<{
+  text: string;
+  inputTokens: number;
+  /** Includes thinking tokens, because they are billed as output. */
+  outputTokens: number;
+  /** The part of outputTokens that was thinking (for diagnosing slow calls). */
+  thinkingTokens?: number;
+}>;
 
 /** True for errors caused by our per-call timeout (they are retried at most once). */
 export function isTimeout(e: unknown): boolean {
@@ -88,6 +95,7 @@ export function sdkTransport(apiKey: string, timeoutMs = 300_000): Transport {
       inputTokens: u?.promptTokenCount ?? 0,
       // "Thinking" tokens are billed as output tokens.
       outputTokens: (u?.candidatesTokenCount ?? 0) + (u?.thoughtsTokenCount ?? 0),
+      thinkingTokens: u?.thoughtsTokenCount ?? 0,
     };
   };
 }
@@ -168,6 +176,7 @@ export class GeminiClient implements LlmClient {
             model: this.opts.model,
             inputTokens: r.inputTokens,
             outputTokens: r.outputTokens,
+            thinkingTokens: r.thinkingTokens ?? 0,
             costUsd: cost,
             latencyMs: Date.now() - started,
             retries: attempt,
