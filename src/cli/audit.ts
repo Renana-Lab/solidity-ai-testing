@@ -210,6 +210,11 @@ export async function audit(file: string, flags: AuditFlags): Promise<number> {
       });
     }
     if (sl.raw) writeFileSync(path.join(outDir, "slither.json"), sl.raw);
+    // The normalized issues, so `sat bench` can re-score (e.g. the Gemini+Slither union) without any tool.
+    writeFileSync(
+      path.join(outDir, "issues.json"),
+      JSON.stringify({ llm: llmIssues, slither: wantSlither && !sl.error ? sl.issues : null, truth: truth?.issues ?? null }, null, 2),
+    );
     writeFileSync(path.join(outDir, "comparison.json"), JSON.stringify({ comparison, truth }, null, 2));
   } catch (e) {
     if (e instanceof BudgetExceededError) {

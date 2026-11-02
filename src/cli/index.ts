@@ -2,6 +2,7 @@
 import "dotenv/config";
 import { Command } from "commander";
 import { audit } from "./audit.js";
+import { bench, compare } from "./bench.js";
 import { doctor } from "./doctor.js";
 import { genTests } from "./genTests.js";
 
@@ -58,6 +59,33 @@ program
   .option("--verbose", "save every prompt that is sent")
   .action(async (file: string, flags) => {
     process.exitCode = await audit(file, flags);
+  });
+
+program
+  .command("bench")
+  .description("run gen-tests and audit (with PoC) on every sample and write evaluation.md")
+  .option("--dir <dir>", "folder with the sample contracts", "contracts/samples")
+  .option("--only <kind>", "vulnerable, safe or all", "all")
+  .option("--repeat <n>", "audit runs per contract (to measure stability)", Number, 1)
+  .option("--model <name>", "Gemini model (default from config)")
+  .option("--flash", "use the flash model (the default)")
+  .option("--pro", "use the strong, more expensive model (gemini-4-argon)")
+  .option("--out <dir>", "output directory", "reports")
+  .option("--max-cost <usd>", "cost cap for ONE contract (default 0.10)", Number)
+  .option("--max-total-cost <usd>", "cost cap for the whole bench (default 1.00)", Number)
+  .option("--skip-tests", "only audit, do not generate tests")
+  .action(async (flags) => {
+    process.exitCode = await bench(flags);
+  });
+
+program
+  .command("compare")
+  .description("side-by-side table of two bench folders (for example flash and pro)")
+  .argument("<benchA>", "folder made by sat bench")
+  .argument("<benchB>", "folder made by sat bench")
+  .option("--out <dir>", "output directory", "reports")
+  .action((a: string, b: string, flags: { out: string }) => {
+    process.exitCode = compare(a, b, flags.out);
   });
 
 await program.parseAsync(process.argv);
