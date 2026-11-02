@@ -8,6 +8,7 @@ import { loadConfig, loadPricing, loadPrompt } from "../config.js";
 import { anonymize, loadContract } from "../contract.js";
 import { DEFAULT_GROUND_TRUTH, loadGroundTruth, truthFor } from "../eval/groundTruth.js";
 import { confirmFindings } from "../audit/poc.js";
+import { checkForgeAvailable } from "../foundry/preflight.js";
 import { ForgeWorkspace, ToolMissingError } from "../foundry/runner.js";
 import { FixtureClient, GeminiClient, LlmApiError, LlmClient, LlmOutputError, sdkTransport } from "../llm/client.js";
 import { BudgetExceededError, CostTracker } from "../llm/cost.js";
@@ -33,6 +34,8 @@ export interface AuditFlags {
   maxPocRepairs?: number;
   /** Use findings from a saved llm-findings.json instead of asking the model (negative controls). */
   pocFrom?: string;
+  /** The --poc-from findings belong to a different contract: the PoCs must all fail. */
+  negativeControl?: boolean;
   keepWorkspace?: boolean;
   dryRun?: boolean;
   mock?: string;
@@ -47,6 +50,13 @@ async function gitSha(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** The "Gemini: ..." part of the summary line. */
+export function geminiPart(count: number, pocFrom?: string): string {
+  return pocFrom
+    ? `Gemini: ${count} findings (loaded from ${path.basename(pocFrom)}, no new audit calls)`
+    : `Gemini: ${count} findings`;
 }
 
 /** `sat audit <file.sol>`. Returns the process exit code (spec section 7). */
@@ -86,6 +96,16 @@ export async function audit(file: string, flags: AuditFlags): Promise<number> {
     writeFileSync(path.join(dir, "audit.user.txt"), buildAuditPrompt(flags.blind ? anonymize(contract) : contract));
     console.log(`Dry run: prompts saved in ${dir}`);
     return 0;
+  }
+
+  // Forge is needed for PoCs (and mock runs use it too); find out now, not after paying for the audit.
+  if (flags.poc) {
+    try {
+      await checkForgeAvailable();
+    } catch (e) {
+      console.error(e instanceof Error ? e.message : String(e));
+      return 2;
+    }
   }
 
   const cost = new CostTracker(loadPricing(), maxCost);
@@ -169,7 +189,7 @@ export async function audit(file: string, flags: AuditFlags): Promise<number> {
       }
     }
 
-    summary = { contract: contract.fileName, findings, slither: { issues: sl.issues, skipped: sl.skipped, error: sl.error }, comparison, truth, poc: null, injected: Boolean(injected) };
+    summary = { contract: contract.fileName, findings, slither: { issues: sl.issues, skipped: sl.skipped, error: sl.error }, comparison, truth, poc: null, injected: flags.pocFrom ? { file: path.resolve(flags.pocFrom), negativeControl: Boolean(flags.negativeControl) } : null };
     writeFileSync(path.join(outDir, "llm-findings.json"), JSON.stringify({ findings }, null, 2));
 
     // Step 3 (optional): prove serious findings with exploit tests that really run.
@@ -225,7 +245,7 @@ export async function audit(file: string, flags: AuditFlags): Promise<number> {
   if (summary) {
     const s = summary;
     const slitherPart = s.slither.skipped ? "skipped" : s.slither.error ? "failed" : `${s.slither.issues.filter((i) => i.severity !== "info").length} issues`;
-    console.log(`Gemini: ${s.findings.length} findings | Slither: ${slitherPart} | cost: $${cost.totalUsd.toFixed(4)}`);
+    console.log(`${geminiPart(s.findings.length, flags.pocFrom)} | Slither: ${slitherPart} | cost: $${cost.totalUsd.toFixed(4)}`);
     if (s.truth) console.log(`Ground truth: Gemini TP ${s.truth.llm.tp} / FP ${s.truth.llm.fp} / FN ${s.truth.llm.fn}`);
     if (s.poc) {
       const by = (st: string) => s.poc!.filter((r) => r.status === st).length;

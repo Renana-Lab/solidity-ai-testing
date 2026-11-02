@@ -22,8 +22,15 @@ export interface AuditSummary {
   truth: { issues: Issue[]; llm: Scores; slither: Scores | null; llmMatch: MatchResult } | null;
   /** null when --poc was not used. */
   poc: PocResult[] | null;
-  /** True when the findings came from --poc-from (a negative control), not from the model. */
-  injected: boolean;
+  /** Set when the findings came from --poc-from instead of the model. */
+  injected: { file: string; negativeControl: boolean } | null;
+}
+
+/** Says "negative control" only when the run really is one. */
+export function injectedBanner(i: { file: string; negativeControl: boolean }): string {
+  return i.negativeControl
+    ? `> **Negative control:** these findings were NOT produced for this contract. They were loaded from \`${i.file}\` with \`--poc-from\` to check that a PoC cannot pass on code that is not vulnerable this way.`
+    : `> **Findings loaded from a file:** \`${i.file}\` (\`--poc-from\`). No new audit calls were made; scoring against the ground truth was skipped.`;
 }
 
 const pct = (n: number | null) => (n === null ? "n/a" : `${n}%`);
@@ -63,7 +70,7 @@ export function renderReport(run: RunInfo, tests: GenTestsSummary | null, audit:
   }
   if (audit) {
     lines.push("", "## 3. Findings (Gemini)");
-    if (audit.injected) lines.push("> **Negative control:** these findings were NOT produced for this contract. They were injected with `--poc-from` to check that a PoC cannot pass on code that is not vulnerable this way.", "");
+    if (audit.injected) lines.push(injectedBanner(audit.injected), "");
     if (audit.findings.length === 0) lines.push("No findings.");
     else {
       lines.push("| ID | Severity | Category | Function | Lines | Confidence | PoC | Title |", "|---|---|---|---|---|---|---|---|");

@@ -49,6 +49,7 @@ program
   .option("--poc-severity <level>", "minimum severity that gets a PoC (default from config: high)")
   .option("--max-poc-repairs <n>", "repair rounds for PoCs that fail to compile", Number)
   .option("--poc-from <file>", "use findings from a saved llm-findings.json instead of asking the model")
+  .option("--negative-control", "with --poc-from: the findings belong to another contract, so every PoC must fail")
   .option("--keep-workspace", "do not delete the temporary Foundry workspaces")
   .option("--no-blind", "send the real contract and file name (by default they are replaced with 'Target')")
   .option("--ground-truth <file>", "ground-truth.yaml to score against (default: contracts/samples/ground-truth.yaml)")

@@ -3,6 +3,7 @@ import path from "node:path";
 import { execa } from "execa";
 import { loadConfig, loadPricing, loadPrompt } from "../config.js";
 import { ContractTooLargeError, loadContract } from "../contract.js";
+import { checkForgeAvailable } from "../foundry/preflight.js";
 import { ForgeWorkspace, ToolMissingError } from "../foundry/runner.js";
 import { FixtureClient, GeminiClient, LlmApiError, LlmClient, LlmOutputError, sdkTransport } from "../llm/client.js";
 import { BudgetExceededError, CostTracker } from "../llm/cost.js";
@@ -74,6 +75,14 @@ export async function genTests(file: string, flags: GenTestsFlags): Promise<numb
     writeFileSync(path.join(dir, "gen-tests.user.txt"), buildGenPrompt(contract));
     console.log(`Dry run: prompts saved in ${dir}`);
     return 0;
+  }
+
+  // Forge runs every generated test; find out now, not after paying for the first call.
+  try {
+    await checkForgeAvailable();
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : String(e));
+    return 2;
   }
 
   const cost = new CostTracker(loadPricing(), maxCost);
