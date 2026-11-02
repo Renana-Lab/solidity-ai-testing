@@ -1,13 +1,23 @@
 # Default settings. Flags and env vars override these.
-model: gemini-2.5-pro
-# gemini-2.5-flash returned 404 "no longer available to new users" on 2026-11-02.
+# Models: default is the cheap one that proved itself on Counter.sol.
+# --flash is the same model (kept as a shortcut); --pro picks the strong, pricier one
+# for audits and PoCs, where reasoning matters.
+model: gemini-3.8-flash
 flashModel: gemini-3.8-flash
+proModel: gemini-4-argon
+# gemini-2.5-flash returned 404 "no longer available to new users" on 2026-11-02.
 temperature:
   audit: 0.2
   genTests: 0.4
+# How much the model may think. Lower = faster and cheaper (thinking is billed as output).
+thinking:
+  genTests: low
+  audit: high
 maxCostUsd: 1.00
 concurrency: 2
 maxRpm: 10
 maxRetries: 5
+# Per API call. One earlier call took ~238s, mostly thinking time.
+callTimeoutMs: 300000
 maxRepairs: 3
 maxContractTokens: 20000

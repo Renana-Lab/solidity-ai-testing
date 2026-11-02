@@ -6,7 +6,7 @@ import type { TestOutcome } from "../foundry/parse.js";
 import { findUnsafeCode } from "../foundry/safety.js";
 import { percent } from "../foundry/parse.js";
 import { GenTestsOutput, RepairOutput } from "../llm/schemas.js";
-import type { LlmClient } from "../llm/client.js";
+import type { LlmClient, ThinkingLevel } from "../llm/client.js";
 import { truncateMiddle } from "../util.js";
 
 export interface AttemptRecord {
@@ -42,6 +42,7 @@ export interface GenTestsParams {
   outDir: string;
   maxRepairs: number;
   temperature: number;
+  thinking?: ThinkingLevel;
   genSystem: string;
   repairSystem: string;
   /** Prompts are only built (never sent) when this is set. */
@@ -104,6 +105,7 @@ export async function generateTests(p: GenTestsParams): Promise<GenTestsSummary>
     user: genUser,
     schema: GenTestsOutput,
     temperature: p.temperature,
+    thinking: p.thinking,
   });
 
   const testFile = safeTestFileName(first.testFileName, p.contract.contractName);
@@ -161,6 +163,7 @@ export async function generateTests(p: GenTestsParams): Promise<GenTestsSummary>
       user: repairUser,
       schema: RepairOutput,
       temperature: p.temperature,
+      thinking: p.thinking,
     });
     repairsUsed++;
     behaviorNotes.push(...fix.behaviorNotes);

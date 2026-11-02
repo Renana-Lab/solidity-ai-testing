@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import path from "node:path";
-import { ApiError, GoogleGenAI } from "@google/genai";
+import { ApiError, GoogleGenAI, type ThinkingLevel as SdkThinkingLevel } from "@google/genai";
 import { z } from "zod";
 import { scrub } from "../util.js";
 import { CostTracker } from "./cost.js";
@@ -12,6 +12,20 @@ export interface GenerateRequest<T> {
   user: string;
   schema: z.ZodType<T>;
   temperature: number;
+  /** How much the model may "think" before answering. Thinking tokens cost output prices. */
+  thinking?: ThinkingLevel;
+}
+
+export type ThinkingLevel = "minimal" | "low" | "medium" | "high";
+
+/** Gemini 2.5 takes a token budget; Gemini 3+ takes a named level. */
+export function thinkingConfigFor(model: string, level: ThinkingLevel | undefined) {
+  if (!level) return undefined;
+  if (/^gemini-2\.5/.test(model)) {
+    const budget = { minimal: 0, low: 1024, medium: 4096, high: 16384 }[level];
+    return { thinkingBudget: budget };
+  }
+  return { thinkingLevel: level.toUpperCase() as SdkThinkingLevel };
 }
 
 /** Everything the rest of the code knows about an LLM. Swap in a mock for tests. */
@@ -26,7 +40,14 @@ export type Transport = (p: {
   user: string;
   temperature: number;
   jsonSchema: unknown;
+  thinking?: ThinkingLevel;
 }) => Promise<{ text: string; inputTokens: number; outputTokens: number }>;
+
+/** True for errors caused by our per-call timeout (they are retried at most once). */
+export function isTimeout(e: unknown): boolean {
+  const s = `${(e as Error)?.name ?? ""} ${(e as Error)?.message ?? ""}`;
+  return /timeout|timed out|AbortError/i.test(s);
+}
 
 /** Exit code 4: the API kept failing after all retries. */
 export class LlmApiError extends Error {
@@ -45,9 +66,11 @@ export class LlmOutputError extends Error {
 }
 
 /** The real transport, using the official SDK with JSON-schema structured output. */
-export function sdkTransport(apiKey: string): Transport {
-  const ai = new GoogleGenAI({ apiKey });
-  return async ({ model, system, user, temperature, jsonSchema }) => {
+export function sdkTransport(apiKey: string, timeoutMs = 300_000): Transport {
+  // attempts: 1 turns off the SDK's own retries; GeminiClient does all retrying,
+  // so the number of attempts (and the cost) stays predictable.
+  const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: timeoutMs, retryOptions: { attempts: 1 } } });
+  return async ({ model, system, user, temperature, jsonSchema, thinking }) => {
     const res = await ai.models.generateContent({
       model,
       contents: user,
@@ -56,6 +79,7 @@ export function sdkTransport(apiKey: string): Transport {
         temperature,
         responseMimeType: "application/json",
         responseJsonSchema: jsonSchema,
+        thinkingConfig: thinkingConfigFor(model, thinking),
       },
     });
     const u = res.usageMetadata;
@@ -123,6 +147,7 @@ export class GeminiClient implements LlmClient {
     this.opts.cost.assertWithinBudget();
     await this.acquire();
     try {
+      let timeouts = 0;
       for (let attempt = 0; ; attempt++) {
         const started = Date.now();
         try {
@@ -133,6 +158,7 @@ export class GeminiClient implements LlmClient {
             user,
             temperature: req.temperature,
             jsonSchema,
+            thinking: req.thinking,
           });
           const cost = this.opts.cost.record(this.opts.model, r.inputTokens, r.outputTokens);
           this.log({
@@ -151,6 +177,8 @@ export class GeminiClient implements LlmClient {
           const retryable = status === undefined || status === 429 || status >= 500;
           const msg = e instanceof Error ? e.message : String(e);
           if (!retryable) throw new LlmApiError(`Gemini API error ${status}: ${msg}`);
+          // A timeout can mean a 5-minute wait: retry it once, not maxRetries times.
+          if (isTimeout(e) && ++timeouts > 1) throw new LlmApiError(`Gemini API timed out twice: ${msg}`);
           if (attempt >= this.maxRetries) throw new LlmApiError(`Gemini API failed after ${attempt + 1} attempts: ${msg}`);
           await this.sleep(1000 * 2 ** attempt + Math.random() * 500);
         }

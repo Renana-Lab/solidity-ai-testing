@@ -13,6 +13,7 @@ import { REPO_ROOT, scrub } from "../util.js";
 export interface GenTestsFlags {
   model?: string;
   flash?: boolean;
+  pro?: boolean;
   out: string;
   maxCost?: number;
   maxRepairs?: number;
@@ -36,7 +37,11 @@ async function gitSha(): Promise<string | null> {
 /** `sat gen-tests <file.sol>`. Returns the process exit code (spec section 7). */
 export async function genTests(file: string, flags: GenTestsFlags): Promise<number> {
   const cfg = loadConfig();
-  const model = flags.model ?? (flags.flash ? cfg.flashModel : cfg.model);
+  if (flags.flash && flags.pro) {
+    console.error("Use either --flash or --pro, not both.");
+    return 1;
+  }
+  const model = flags.model ?? (flags.pro ? cfg.proModel : flags.flash ? cfg.flashModel : cfg.model);
   const maxCost = flags.maxCost ?? cfg.maxCostUsd;
   const maxRepairs = flags.maxRepairs ?? cfg.maxRepairs;
 
@@ -82,7 +87,7 @@ export async function genTests(file: string, flags: GenTestsFlags): Promise<numb
       return 1;
     }
     client = new GeminiClient({
-      transport: sdkTransport(key),
+      transport: sdkTransport(key, cfg.callTimeoutMs),
       model,
       cost,
       logPath: path.join(runDir, "llm-calls.jsonl"),
@@ -108,6 +113,7 @@ export async function genTests(file: string, flags: GenTestsFlags): Promise<numb
       outDir,
       maxRepairs,
       temperature: cfg.temperature.genTests,
+      thinking: cfg.thinking.genTests,
       genSystem,
       repairSystem,
       onPrompt: (name, system, user) => {

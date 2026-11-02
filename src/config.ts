@@ -7,7 +7,13 @@ import { REPO_ROOT } from "./util.js";
 const ConfigSchema = z.object({
   model: z.string(),
   flashModel: z.string(),
+  proModel: z.string(),
   temperature: z.object({ audit: z.number(), genTests: z.number() }),
+  thinking: z.object({
+    genTests: z.enum(["minimal", "low", "medium", "high"]),
+    audit: z.enum(["minimal", "low", "medium", "high"]),
+  }),
+  callTimeoutMs: z.number().int().positive(),
   maxCostUsd: z.number().positive(),
   concurrency: z.number().int().positive(),
   maxRpm: z.number().positive(),

@@ -17,5 +17,6 @@ describe("doctor helpers", () => {
     const key = results.find((r) => r.name === "GEMINI_API_KEY");
     expect(key?.ok).toBe(true);
     expect(JSON.stringify(results)).not.toContain("super-secret-123");
-  });
+    // This test really starts forge, slither and solc-select (Python tools start slowly).
+  }, 30_000);
 });

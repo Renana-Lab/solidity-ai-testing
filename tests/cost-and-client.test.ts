@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { GeminiClient, LlmApiError, LlmOutputError, Transport } from "../src/llm/client.js";
+import { GeminiClient, LlmApiError, LlmOutputError, Transport, thinkingConfigFor } from "../src/llm/client.js";
 import { BudgetExceededError, CostTracker } from "../src/llm/cost.js";
 
 const pricing = { m: { input: 1, output: 10 } }; // $ per 1M tokens
@@ -29,6 +29,14 @@ describe("CostTracker", () => {
     const t = new CostTracker(pricing, 0.001);
     t.record("m", 1_000_000, 0);
     expect(() => t.assertWithinBudget()).toThrow(BudgetExceededError);
+  });
+});
+
+describe("thinkingConfigFor", () => {
+  it("uses a token budget for 2.5 and a level for newer models", () => {
+    expect(thinkingConfigFor("gemini-2.5-pro", "low")).toEqual({ thinkingBudget: 1024 });
+    expect(thinkingConfigFor("gemini-3.8-flash", "low")).toEqual({ thinkingLevel: "LOW" });
+    expect(thinkingConfigFor("gemini-4-argon", undefined)).toBeUndefined();
   });
 });
 
@@ -99,6 +107,26 @@ describe("GeminiClient", () => {
     await c.generate(req);
     await expect(c.generate(req)).rejects.toThrow(BudgetExceededError);
     expect(calls).toBe(1);
+  });
+
+  it("retries a timeout once, then gives up", async () => {
+    let calls = 0;
+    const { c } = client(async () => {
+      calls++;
+      throw Object.assign(new Error("request timed out"), { name: "TimeoutError" });
+    });
+    await expect(c.generate(req)).rejects.toThrow(/timed out twice/);
+    expect(calls).toBe(2);
+  });
+
+  it("passes the thinking level through to the transport", async () => {
+    let seen: string | undefined;
+    const { c } = client(async (p) => {
+      seen = p.thinking;
+      return reply('{"ok":true}');
+    });
+    await c.generate({ ...req, thinking: "low" });
+    expect(seen).toBe("low");
   });
 
   it("never leaks the API key in error messages", async () => {
