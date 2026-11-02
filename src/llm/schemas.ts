@@ -17,3 +17,43 @@ export const RepairOutput = z.object({
   behaviorNotes: z.array(z.string()),
 });
 export type RepairOutput = z.infer<typeof RepairOutput>;
+
+// ---- Audit (spec 9.1) ----
+
+export const SEVERITIES = ["critical", "high", "medium", "low", "info"] as const;
+export const CATEGORIES = [
+  "reentrancy",
+  "access-control",
+  "arithmetic",
+  "tx-origin",
+  "front-running",
+  "timestamp",
+  "dos",
+  "unchecked-call",
+  "other",
+] as const;
+
+export type Severity = (typeof SEVERITIES)[number];
+export type Category = (typeof CATEGORIES)[number];
+
+export const Finding = z.object({
+  id: z.string().describe("F-001, F-002, ..."),
+  title: z.string(),
+  severity: z.enum(SEVERITIES),
+  swc: z.string().optional().describe("e.g. SWC-107"),
+  category: z.enum(CATEGORIES),
+  location: z.object({
+    contract: z.string().optional(),
+    function: z.string().describe("Function name without parameters; use 'constructor' or '' if none"),
+    startLine: z.number().int(),
+    endLine: z.number().int(),
+  }),
+  description: z.string(),
+  exploitScenario: z.string(),
+  suggestedFix: z.string(),
+  confidence: z.number().min(0).max(1),
+});
+export type Finding = z.infer<typeof Finding>;
+
+export const AuditOutput = z.object({ findings: z.array(Finding) });
+export type AuditOutput = z.infer<typeof AuditOutput>;

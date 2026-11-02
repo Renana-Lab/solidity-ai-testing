@@ -1,0 +1,57 @@
+# Ground truth for the benchmark. "lines" is the function's start and end line.
+# A unit test (tests/ground-truth.test.ts) checks that each range really starts at
+# `function <name>` and ends at a closing brace, so this file cannot silently drift.
+contracts:
+  - file: vulnerable/ReentrancyVault.sol
+    findings:
+      - category: reentrancy
+        swc: SWC-107
+        function: withdraw
+        lines: [13, 21]
+        severity: high
+  - file: vulnerable/UnprotectedReset.sol
+    findings:
+      - category: access-control
+        swc: SWC-105
+        function: resetAll
+        lines: [21, 25]
+        severity: high
+  - file: vulnerable/UncheckedMath.sol
+    findings:
+      - category: arithmetic
+        swc: SWC-101
+        function: spend
+        lines: [14, 18]
+        severity: high
+  - file: vulnerable/TxOriginWallet.sol
+    findings:
+      - category: tx-origin
+        swc: SWC-115
+        function: transferTo
+        lines: [14, 18]
+        severity: high
+  - file: vulnerable/TimestampLottery.sol
+    findings:
+      - category: timestamp
+        swc: SWC-116
+        function: pickWinner
+        lines: [16, 23]
+        severity: medium
+  - file: vulnerable/UnboundedRefund.sol
+    findings:
+      - category: dos
+        swc: SWC-128
+        function: refundAll
+        lines: [17, 25]
+        severity: medium
+  - file: vulnerable/UncheckedCall.sol
+    findings:
+      - category: unchecked-call
+        swc: SWC-104
+        function: claim
+        lines: [14, 18]
+        severity: medium
+  - file: safe/SimpleToken.sol
+    findings: []
+  - file: safe/SafeVault.sol
+    findings: []

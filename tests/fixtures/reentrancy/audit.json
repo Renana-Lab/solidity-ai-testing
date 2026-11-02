@@ -1,0 +1,16 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Reentrancy in withdraw: ETH sent before the balance is reset",
+      "severity": "high",
+      "swc": "SWC-107",
+      "category": "reentrancy",
+      "location": { "contract": "Target", "function": "withdraw", "startLine": 13, "endLine": 21 },
+      "description": "withdraw() sends ETH with call before setting balances[msg.sender] to 0.",
+      "exploitScenario": "An attacker contract re-enters withdraw() from receive() and drains the vault.",
+      "suggestedFix": "Reset the balance before the external call (checks-effects-interactions) or use a reentrancy guard.",
+      "confidence": 0.95
+    }
+  ]
+}
