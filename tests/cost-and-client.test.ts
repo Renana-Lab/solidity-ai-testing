@@ -61,6 +61,24 @@ describe("GeminiClient", () => {
     expect(calls).toBe(3);
   });
 
+  it("records why each retry happened in the log", async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "sat-"));
+    const logPath = path.join(dir, "llm-calls.jsonl");
+    let calls = 0;
+    const { c } = client(
+      async () => {
+        if (++calls < 2) throw Object.assign(new Error("overloaded"), { status: 503 });
+        return reply('{"ok":true}');
+      },
+      1,
+      { logPath },
+    );
+    await c.generate(req);
+    const line = JSON.parse(readFileSync(logPath, "utf8").trim());
+    expect(line.retries).toBe(1);
+    expect(line.retryReasons[0]).toMatch(/503 after \d+ms: overloaded/);
+  });
+
   it("does not retry other 4xx errors", async () => {
     let calls = 0;
     const { c } = client(async () => {

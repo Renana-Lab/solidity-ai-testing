@@ -148,6 +148,8 @@ export class GeminiClient implements LlmClient {
     await this.acquire();
     try {
       let timeouts = 0;
+      // Why each retry happened (status + start of the message), saved in llm-calls.jsonl.
+      const retryReasons: string[] = [];
       for (let attempt = 0; ; attempt++) {
         const started = Date.now();
         try {
@@ -169,6 +171,7 @@ export class GeminiClient implements LlmClient {
             costUsd: cost,
             latencyMs: Date.now() - started,
             retries: attempt,
+            ...(retryReasons.length ? { retryReasons } : {}),
           });
           return r.text;
         } catch (e) {
@@ -180,6 +183,7 @@ export class GeminiClient implements LlmClient {
           // A timeout can mean a 5-minute wait: retry it once, not maxRetries times.
           if (isTimeout(e) && ++timeouts > 1) throw new LlmApiError(`Gemini API timed out twice: ${msg}`);
           if (attempt >= this.maxRetries) throw new LlmApiError(`Gemini API failed after ${attempt + 1} attempts: ${msg}`);
+          retryReasons.push(`${status ?? "no-status"} after ${Date.now() - started}ms: ${scrub(msg).slice(0, 160)}`);
           await this.sleep(1000 * 2 ** attempt + Math.random() * 500);
         }
       }
