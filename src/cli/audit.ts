@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { execa } from "execa";
 import { auditContract, buildAuditPrompt, findingsToIssues } from "../audit/auditor.js";
@@ -7,10 +7,11 @@ import type { Issue } from "../audit/types.js";
 import { loadConfig, loadPricing, loadPrompt } from "../config.js";
 import { anonymize, loadContract } from "../contract.js";
 import { DEFAULT_GROUND_TRUTH, loadGroundTruth, truthFor } from "../eval/groundTruth.js";
-import { ToolMissingError } from "../foundry/runner.js";
+import { confirmFindings } from "../audit/poc.js";
+import { ForgeWorkspace, ToolMissingError } from "../foundry/runner.js";
 import { FixtureClient, GeminiClient, LlmApiError, LlmClient, LlmOutputError, sdkTransport } from "../llm/client.js";
 import { BudgetExceededError, CostTracker } from "../llm/cost.js";
-import type { Finding } from "../llm/schemas.js";
+import { AuditOutput, Finding, SEVERITIES } from "../llm/schemas.js";
 import { AuditSummary, renderReport } from "../report/markdown.js";
 import { runSlither } from "../slither/runner.js";
 import { REPO_ROOT, scrub } from "../util.js";
@@ -26,6 +27,13 @@ export interface AuditFlags {
   /** commander turns --no-blind into blind=false. Default true: the contract name is hidden. */
   blind: boolean;
   groundTruth?: string;
+  /** Write an exploit test for each serious finding and run it (direction B, step 3). */
+  poc?: boolean;
+  pocSeverity?: string;
+  maxPocRepairs?: number;
+  /** Use findings from a saved llm-findings.json instead of asking the model (negative controls). */
+  pocFrom?: string;
+  keepWorkspace?: boolean;
   dryRun?: boolean;
   mock?: string;
   verbose?: boolean;
@@ -107,10 +115,15 @@ export async function audit(file: string, flags: AuditFlags): Promise<number> {
   let budgetStopped = false;
   let errorMessage: string | null = null;
   let summary: AuditSummary | null = null;
+  const workDir = path.join(REPO_ROOT, ".work", runId);
 
   try {
+    // --poc-from: the findings come from a file, so there is nothing for Gemini or Slither to do.
+    const injected = flags.pocFrom ? AuditOutput.parse(JSON.parse(readFileSync(path.resolve(flags.pocFrom), "utf8"))).findings : null;
+    const wantSlither = flags.slither && !injected;
+
     // Run Gemini and Slither side by side: they do not depend on each other.
-    const slitherPromise: Promise<{ issues: Issue[]; skipped: boolean; error?: string; raw?: string }> = flags.slither
+    const slitherPromise: Promise<{ issues: Issue[]; skipped: boolean; error?: string; raw?: string }> = wantSlither
       ? runSlither(contractPath).then(
           (r) => ({ issues: r.issues, skipped: false, raw: r.raw }),
           (e) => {
@@ -121,7 +134,7 @@ export async function audit(file: string, flags: AuditFlags): Promise<number> {
       : Promise.resolve({ issues: [], skipped: true });
 
     const [findings, sl]: [Finding[], Awaited<typeof slitherPromise>] = await Promise.all([
-      auditContract({
+      injected ?? auditContract({
         client,
         contract: flags.blind ? anonymize(contract) : contract,
         system,
@@ -138,12 +151,13 @@ export async function audit(file: string, flags: AuditFlags): Promise<number> {
     ]);
 
     const llmIssues = findingsToIssues(findings);
-    const comparison = flags.slither && !sl.error ? matchIssues(llmIssues, sl.issues) : null;
+    const comparison = wantSlither && !sl.error ? matchIssues(llmIssues, sl.issues) : null;
 
     // Ground truth is optional: used when this contract is listed in the file.
+    // Injected findings are not Gemini's answer for this contract, so they are not scored.
     let truth: AuditSummary["truth"] = null;
     const gtPath = path.resolve(flags.groundTruth ?? path.join(REPO_ROOT, DEFAULT_GROUND_TRUTH));
-    if (existsSync(gtPath)) {
+    if (existsSync(gtPath) && !injected) {
       const expected = truthFor(loadGroundTruth(gtPath), contractPath);
       if (expected) {
         truth = {
@@ -155,8 +169,26 @@ export async function audit(file: string, flags: AuditFlags): Promise<number> {
       }
     }
 
-    summary = { contract: contract.fileName, findings, slither: { issues: sl.issues, skipped: sl.skipped, error: sl.error }, comparison, truth };
+    summary = { contract: contract.fileName, findings, slither: { issues: sl.issues, skipped: sl.skipped, error: sl.error }, comparison, truth, poc: null, injected: Boolean(injected) };
     writeFileSync(path.join(outDir, "llm-findings.json"), JSON.stringify({ findings }, null, 2));
+
+    // Step 3 (optional): prove serious findings with exploit tests that really run.
+    if (flags.poc) {
+      const minSeverity = SEVERITIES.find((s) => s === flags.pocSeverity) ?? cfg.poc.minSeverity;
+      summary.poc = await confirmFindings({
+        client,
+        makeForge: (id) => new ForgeWorkspace(path.join(workDir, `poc-${id}`), contractPath, { testTimeoutMs: cfg.poc.testTimeoutMs }),
+        contract,
+        findings,
+        minSeverity,
+        maxRepairs: flags.maxPocRepairs ?? cfg.poc.maxRepairs,
+        system: loadPrompt("poc.system.md"),
+        repairSystem: loadPrompt("poc-repair.system.md"),
+        temperature: cfg.temperature.audit,
+        thinking: cfg.thinking.audit,
+        outDir,
+      });
+    }
     if (sl.raw) writeFileSync(path.join(outDir, "slither.json"), sl.raw);
     writeFileSync(path.join(outDir, "comparison.json"), JSON.stringify({ comparison, truth }, null, 2));
   } catch (e) {
@@ -172,6 +204,8 @@ export async function audit(file: string, flags: AuditFlags): Promise<number> {
     }
     errorMessage = scrub(e instanceof Error ? e.message : String(e));
     console.error(errorMessage);
+  } finally {
+    if (!flags.keepWorkspace) rmSync(workDir, { recursive: true, force: true });
   }
 
   const run = {
@@ -193,6 +227,10 @@ export async function audit(file: string, flags: AuditFlags): Promise<number> {
     const slitherPart = s.slither.skipped ? "skipped" : s.slither.error ? "failed" : `${s.slither.issues.filter((i) => i.severity !== "info").length} issues`;
     console.log(`Gemini: ${s.findings.length} findings | Slither: ${slitherPart} | cost: $${cost.totalUsd.toFixed(4)}`);
     if (s.truth) console.log(`Ground truth: Gemini TP ${s.truth.llm.tp} / FP ${s.truth.llm.fp} / FN ${s.truth.llm.fn}`);
+    if (s.poc) {
+      const by = (st: string) => s.poc!.filter((r) => r.status === st).length;
+      console.log(`PoC: ${s.poc.length} tried | confirmed ${by("confirmed")} | unconfirmed ${by("unconfirmed")} | compile-error ${by("poc_failed_to_compile")} | rejected ${by("rejected_unsafe")}`);
+    }
   }
   console.log(`Report: ${path.join(runDir, "report.md")}`);
   return exitCode;

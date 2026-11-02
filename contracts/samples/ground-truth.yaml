@@ -37,6 +37,16 @@ contracts:
         function: pickWinner
         lines: [16, 23]
         severity: medium
+      # Secondary finding, added AFTER seeing Gemini report it (2026-11-02), so it is a
+      # post-hoc addition and slightly favours Gemini in M3 scores. Verified by measurement:
+      # `delete players` costs ~5,000 gas per entry (100 -> 0.54M, 1000 -> 5.1M, 5000 -> 25.3M),
+      # so ~5,900 entries exceed a 30M block gas limit and the pot is locked. Real but low
+      # severity: an attacker must pay ~590 ETH in tickets that stay locked too.
+      - category: dos
+        swc: SWC-128
+        function: pickWinner
+        lines: [16, 23]
+        severity: low
   - file: vulnerable/UnboundedRefund.sol
     findings:
       - category: dos

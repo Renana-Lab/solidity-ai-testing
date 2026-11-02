@@ -18,6 +18,13 @@ export const RepairOutput = z.object({
 });
 export type RepairOutput = z.infer<typeof RepairOutput>;
 
+export const PocOutput = z.object({
+  testFileName: z.string().describe("File name ending in .t.sol, e.g. Poc_F001.t.sol"),
+  solidity: z.string().describe("Complete Foundry test file that exploits the finding"),
+  assertionExplanation: z.string().describe("What the assertions prove about the exploit"),
+});
+export type PocOutput = z.infer<typeof PocOutput>;
+
 // ---- Audit (spec 9.1) ----
 
 export const SEVERITIES = ["critical", "high", "medium", "low", "info"] as const;

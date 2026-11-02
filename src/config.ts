@@ -14,6 +14,11 @@ const ConfigSchema = z.object({
     audit: z.enum(["minimal", "low", "medium", "high"]),
   }),
   callTimeoutMs: z.number().int().positive(),
+  poc: z.object({
+    minSeverity: z.enum(["critical", "high", "medium", "low", "info"]),
+    maxRepairs: z.number().int().min(0),
+    testTimeoutMs: z.number().int().positive(),
+  }),
   maxCostUsd: z.number().positive(),
   concurrency: z.number().int().positive(),
   maxRpm: z.number().positive(),

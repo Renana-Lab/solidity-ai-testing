@@ -1,0 +1,16 @@
+{
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "mint() has no access control, anyone can mint unlimited tokens",
+      "severity": "high",
+      "swc": "SWC-105",
+      "category": "access-control",
+      "location": { "contract": "SimpleToken", "function": "mint", "startLine": 62, "endLine": 64 },
+      "description": "FABRICATED CLAIM for a negative control: mint(address,uint256) can be called by any account and increases totalSupply.",
+      "exploitScenario": "An unprivileged attacker calls mint(attacker, 1_000_000e18) and receives tokens.",
+      "suggestedFix": "Restrict mint to the owner.",
+      "confidence": 0.9
+    }
+  ]
+}

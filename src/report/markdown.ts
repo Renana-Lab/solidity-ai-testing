@@ -1,5 +1,6 @@
 import type { Issue, MatchResult } from "../audit/types.js";
 import type { Scores } from "../audit/compare.js";
+import type { PocResult } from "../audit/poc.js";
 import type { Finding } from "../llm/schemas.js";
 import type { GenTestsSummary } from "../testgen/generator.js";
 
@@ -19,6 +20,10 @@ export interface AuditSummary {
   comparison: MatchResult | null;
   /** Present when the contract is in ground-truth.yaml. */
   truth: { issues: Issue[]; llm: Scores; slither: Scores | null; llmMatch: MatchResult } | null;
+  /** null when --poc was not used. */
+  poc: PocResult[] | null;
+  /** True when the findings came from --poc-from (a negative control), not from the model. */
+  injected: boolean;
 }
 
 const pct = (n: number | null) => (n === null ? "n/a" : `${n}%`);
@@ -58,11 +63,23 @@ export function renderReport(run: RunInfo, tests: GenTestsSummary | null, audit:
   }
   if (audit) {
     lines.push("", "## 3. Findings (Gemini)");
+    if (audit.injected) lines.push("> **Negative control:** these findings were NOT produced for this contract. They were injected with `--poc-from` to check that a PoC cannot pass on code that is not vulnerable this way.", "");
     if (audit.findings.length === 0) lines.push("No findings.");
     else {
-      lines.push("| ID | Severity | Category | Function | Lines | Confidence | Title |", "|---|---|---|---|---|---|---|");
+      lines.push("| ID | Severity | Category | Function | Lines | Confidence | PoC | Title |", "|---|---|---|---|---|---|---|---|");
       for (const f of audit.findings) {
-        lines.push(`| ${f.id} | ${f.severity} | ${f.category} | ${f.location.function} | ${f.location.startLine}-${f.location.endLine} | ${f.confidence} | ${f.title} |`);
+        const poc = audit.poc?.find((p) => p.findingId === f.id)?.status ?? (audit.poc ? "not attempted" : "-");
+        lines.push(`| ${f.id} | ${f.severity} | ${f.category} | ${f.location.function} | ${f.location.startLine}-${f.location.endLine} | ${f.confidence} | ${poc} | ${f.title} |`);
+      }
+    }
+    if (audit.poc) {
+      lines.push("", "### PoC verification");
+      if (audit.poc.length === 0) lines.push("No finding reached the PoC severity threshold.");
+      for (const p of audit.poc) {
+        lines.push(
+          `- **${p.findingId}** (${p.severity}): **${p.status}**, repairs used ${p.repairsUsed}, tests ${p.passed} passed / ${p.failed} failed. ${p.explanation}`,
+          ...(p.detail ? [`  - Why not confirmed: ${p.detail.replace(/\s+/g, " ").slice(0, 400)}`] : []),
+        );
       }
     }
     lines.push("", "## 4. Comparison with Slither");

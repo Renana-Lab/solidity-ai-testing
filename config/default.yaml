@@ -22,4 +22,10 @@ maxRetries: 5
 # Per API call. One earlier call took ~238s, mostly thinking time.
 callTimeoutMs: 300000
 maxRepairs: 3
+# Exploit tests (M4): findings at this severity or worse get a PoC. Repairs only fix
+# compile errors / rejected tests, never failing assertions. The timeout kills runaway tests.
+poc:
+  minSeverity: high
+  maxRepairs: 2
+  testTimeoutMs: 60000
 maxContractTokens: 20000

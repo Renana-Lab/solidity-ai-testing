@@ -19,6 +19,15 @@ export interface BuildResult {
 export interface TestRunResult {
   outcomes: TestOutcome[];
   output: string;
+  /** True when forge test was killed for running longer than the per-run timeout. */
+  timedOut?: boolean;
+}
+
+export interface WorkspaceOptions {
+  /** Solidity compiler version written to foundry.toml. */
+  solc?: string;
+  /** Kill `forge test` after this long (an exploit test with an endless loop must not hang the run). */
+  testTimeoutMs?: number;
 }
 
 /** What the test generator needs from Foundry. Faked in unit tests. */
@@ -39,8 +48,11 @@ export interface ForgeLike {
 export class ForgeWorkspace implements ForgeLike {
   readonly dir: string;
   private readonly contractFile: string;
+  private readonly testTimeoutMs: number;
 
-  constructor(workDir: string, contractPath: string, solc = "0.8.24") {
+  constructor(workDir: string, contractPath: string, opts: WorkspaceOptions = {}) {
+    const solc = opts.solc ?? "0.8.24";
+    this.testTimeoutMs = opts.testTimeoutMs ?? 300_000;
     this.dir = workDir;
     this.contractFile = path.basename(contractPath);
     mkdirSync(path.join(workDir, "src"), { recursive: true });
@@ -78,14 +90,14 @@ export class ForgeWorkspace implements ForgeLike {
   }
 
   async test(): Promise<TestRunResult> {
-    const r = await this.forge(["test", "--json"]);
+    const r = await this.forge(["test", "--json"], this.testTimeoutMs);
     let outcomes: TestOutcome[] = [];
     try {
       outcomes = parseForgeTestJson(r.stdout);
     } catch {
       /* non-JSON output: leave outcomes empty, the raw output is returned for the repair prompt */
     }
-    return { outcomes, output: r.stdout };
+    return { outcomes, output: r.stdout, timedOut: r.timedOut };
   }
 
   async coverage(): Promise<FileCoverage | null> {
@@ -96,12 +108,12 @@ export class ForgeWorkspace implements ForgeLike {
     return files.find((f) => f.file.replace(/\\/g, "/").endsWith(`src/${this.contractFile}`)) ?? null;
   }
 
-  private async forge(args: string[]) {
+  private async forge(args: string[], timeout = 300_000) {
     // Never pass the API key to anything that runs LLM-written code.
     const env = { ...process.env };
     delete env.GEMINI_API_KEY;
     try {
-      return await execa("forge", args, { cwd: this.dir, reject: false, env, extendEnv: false, timeout: 300_000 });
+      return await execa("forge", args, { cwd: this.dir, reject: false, env, extendEnv: false, timeout });
     } catch (e) {
       if ((e as { code?: string }).code === "ENOENT") throw new ToolMissingError("forge");
       throw e;
