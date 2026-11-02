@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -232,4 +232,23 @@ contract T is Test { function test_X() public { ${body} } }`;
     expect(r.outcomes.every((o) => !o.passed)).toBe(true);
     expect(safe.contractName).toBe("SafeVault");
   }, 180_000);
+});
+
+describe("sat full (mock end to end, real forge and Slither)", () => {
+  it("generates tests, audits and confirms the reentrancy PoC", async () => {
+    const { full } = await import("../src/cli/full.js");
+    const out = mkdtempSync(path.join(os.tmpdir(), "sat-full-"));
+    const code = await full(path.join(REPO_ROOT, "contracts/samples/vulnerable/ReentrancyVault.sol"), {
+      out,
+      slither: true,
+      blind: true,
+      minCoverage: 80,
+      mock: path.join(REPO_ROOT, "tests/fixtures/reentrancy"),
+    });
+    expect(code).toBe(0);
+    // The PoC result is saved inside the audit run folder.
+    const auditRun = readdirSync(out).find((d) => d.endsWith("-audit"))!;
+    const result = JSON.parse(readFileSync(path.join(out, auditRun, "audit", "poc", "F-001.result.json"), "utf8")) as { status: string };
+    expect(result.status).toBe("confirmed");
+  }, 300_000);
 });
