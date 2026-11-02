@@ -16,13 +16,41 @@ contract NoReceiveUser {
     }
 }
 
-/// A malicious user that tries to re-enter withdraw() when it receives ETH.
-/// Our bank updates state before sending, so the second call must fail.
-contract ReentrantUser {
-    SimpleBank bank;
-    bool public reentered;
+/// The two functions the attacker needs. Both the safe and the vulnerable bank have them.
+interface IBank {
+    function deposit() external payable;
+    function withdraw(uint256 amount) external;
+}
 
-    constructor(SimpleBank _bank) {
+/// INTENTIONALLY VULNERABLE, for education only (SWC-107).
+/// Same as SimpleBank but it sends ETH BEFORE updating the balance.
+contract VulnerableBank {
+    mapping(address => uint256) public balances;
+
+    function deposit() external payable {
+        balances[msg.sender] += msg.value;
+    }
+
+    function withdraw(uint256 amount) external {
+        require(balances[msg.sender] >= amount, "insufficient");
+        (bool ok, ) = msg.sender.call{value: amount}(""); // interaction first: the bug
+        require(ok, "transfer failed");
+        // unchecked mimics pre-0.8 behaviour; it keeps this demo focused on reentrancy.
+        unchecked {
+            balances[msg.sender] -= amount;
+        }
+    }
+}
+
+/// A malicious user that tries to re-enter withdraw() whenever it receives ETH.
+contract ReentrantUser {
+    IBank bank;
+    /// How many times the bank let the nested withdraw() succeed.
+    uint256 public reentrySuccesses;
+    /// How many times the bank refused the nested withdraw().
+    uint256 public reentryBlocked;
+
+    constructor(IBank _bank) {
         bank = _bank;
     }
 
@@ -35,9 +63,16 @@ contract ReentrantUser {
     }
 
     // receive() runs when this contract gets plain ETH. We try to withdraw again here.
+    // The try/catch is essential: it SWALLOWS a refusal. Without it, a refusal would
+    // bubble up and cancel the whole transaction, and a safe bank and a vulnerable
+    // bank would look the same from the outside (nothing moves in both cases).
     receive() external payable {
-        reentered = true;
-        bank.withdraw(1 ether);
+        if (address(bank).balance < 1 ether) return; // stop when nothing is left to take
+        try bank.withdraw(1 ether) {
+            reentrySuccesses++;
+        } catch {
+            reentryBlocked++;
+        }
     }
 }
 
@@ -170,23 +205,43 @@ contract SimpleBankTest is Test {
         assertEq(bank.balances(address(user)), 1 ether);
     }
 
-    // Security check: the reentrant second withdraw fails, which makes the
-    // outer transfer fail, so everything is rolled back and nothing is stolen.
+    // Security check on the SAFE bank. The attacker swallows the failure of its nested
+    // withdraw, so the outer withdraw completes normally. The attacker gets back exactly
+    // its own 1 ETH and Bob's 5 ETH are untouched.
     function test_Withdraw_IsReentrancySafe() public {
         // Other users' money sits in the bank: this is what an attacker would target.
         vm.prank(bob);
         bank.deposit{value: 5 ether}();
 
-        ReentrantUser attacker = new ReentrantUser(bank);
-        vm.deal(address(attacker), 1 ether);
+        // The 1 ETH is sent by this test contract, so the attacker starts with 0 ETH of its own.
+        ReentrantUser attacker = new ReentrantUser(IBank(address(bank)));
         attacker.attack{value: 1 ether}();
         vm.warp(block.timestamp + 1 days);
 
-        vm.expectRevert(SimpleBank.TransferFailed.selector);
         attacker.go(1 ether);
 
-        assertEq(address(bank).balance, 6 ether); // nothing left the bank
+        assertEq(attacker.reentryBlocked(), 1); // the bank refused the nested call
+        assertEq(attacker.reentrySuccesses(), 0);
+        assertEq(address(attacker).balance, 1 ether); // got only its own money back
+        assertEq(address(bank).balance, 5 ether); // Bob's money is intact
         assertEq(bank.balances(bob), 5 ether);
+    }
+
+    // The mirror image: the same attacker against the VULNERABLE bank drains everything.
+    // If this test did not succeed, the safe-bank test above would prove nothing.
+    function test_VulnerableBank_IsDrainedByReentrancy() public {
+        VulnerableBank vuln = new VulnerableBank();
+        vm.prank(bob);
+        vuln.deposit{value: 5 ether}();
+
+        ReentrantUser attacker = new ReentrantUser(IBank(address(vuln)));
+        attacker.attack{value: 1 ether}();
+
+        attacker.go(1 ether);
+
+        assertEq(address(vuln).balance, 0); // bank emptied
+        assertEq(address(attacker).balance, 6 ether); // attacker put in 1, took out 6
+        assertGt(attacker.reentrySuccesses(), 0);
     }
 
     // ---------- fuzz ----------
