@@ -1,0 +1,12 @@
+# Default settings. Flags and env vars override these.
+model: gemini-2.5-pro
+flashModel: gemini-2.5-flash
+temperature:
+  audit: 0.2
+  genTests: 0.4
+maxCostUsd: 1.00
+concurrency: 2
+maxRpm: 10
+maxRetries: 5
+maxRepairs: 3
+maxContractTokens: 20000

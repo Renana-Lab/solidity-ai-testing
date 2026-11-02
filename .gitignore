@@ -1,0 +1,10 @@
+# secrets
+.env
+
+# generated
+node_modules/
+dist/
+.work/
+reports/
+out/
+cache/

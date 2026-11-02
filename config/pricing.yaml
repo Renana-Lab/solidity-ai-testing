@@ -1,0 +1,9 @@
+# USD per 1M tokens. PLACEHOLDER values: verify against Google's pricing page
+# before trusting any cost number.
+models:
+  gemini-2.5-pro:
+    input: 1.25
+    output: 10.00
+  gemini-2.5-flash:
+    input: 0.30
+    output: 2.50
