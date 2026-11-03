@@ -47,6 +47,24 @@ export function scoreRow(row: ContractRow): RowScores | null {
   };
 }
 
+/** Splits one contract's PoC results into "finding is in the ground truth" and "extra finding". */
+export function pocSplit(row: ContractRow) {
+  const out = { truthMediumPlus: 0, truthConfirmed: 0, extraTried: 0, extraConfirmed: 0 };
+  if (!row.expected) return out;
+  const isMediumPlus = (i: Issue) => i.severity !== "low" && i.severity !== "info";
+  const matched = matchIssues(row.llmRuns[0] ?? [], row.expected).matched;
+  const truthOf = new Map(matched.map((m) => [m.a.ref, m.b]));
+  out.truthMediumPlus = row.expected.filter(isMediumPlus).length;
+  for (const p of row.poc ?? []) {
+    const t = truthOf.get(p.findingId);
+    if (!t) {
+      out.extraTried++;
+      if (p.status === "confirmed") out.extraConfirmed++;
+    } else if (isMediumPlus(t) && p.status === "confirmed") out.truthConfirmed++;
+  }
+  return out;
+}
+
 /** Add up TP/FP/FN over many contracts, then compute the ratios once (micro average). */
 export function pool(list: Scores[]): Scores {
   const tp = list.reduce((a, s) => a + s.tp, 0);
@@ -78,6 +96,12 @@ export interface Aggregate {
     /** high/critical findings on vulnerable contracts that got a PoC, and how many were confirmed. */
     vulnerableTried: number;
     vulnerableConfirmed: number;
+    /** Ground-truth issues of medium severity or worse, and how many of them a passing PoC confirmed. */
+    truthMediumPlus: number;
+    truthConfirmed: number;
+    /** PoCs on findings that are NOT in the ground truth (scored as false positives), and how many passed. */
+    extraTried: number;
+    extraConfirmed: number;
     /** PoCs that passed on a safe contract: must be 0. */
     safePassed: number;
     safeTried: number;
@@ -108,6 +132,8 @@ export function aggregate(rows: ContractRow[]): Aggregate {
   const pocOf = (kind: ContractRow["kind"]) => rows.filter((r) => r.kind === kind).flatMap((r) => r.poc ?? []);
   const vuln = pocOf("vulnerable");
   const safe = pocOf("safe");
+  const split = rows.filter((r) => r.kind === "vulnerable").map(pocSplit);
+  const sum = (k: keyof ReturnType<typeof pocSplit>) => split.reduce((a, x) => a + x[k], 0);
 
   const stab = rows.map((r) => stability(r.llmRuns)).filter((s): s is { recurring: number; total: number } => s !== null);
 
@@ -120,6 +146,10 @@ export function aggregate(rows: ContractRow[]): Aggregate {
     poc: {
       vulnerableTried: vuln.length,
       vulnerableConfirmed: vuln.filter((p) => p.status === "confirmed").length,
+      truthMediumPlus: sum("truthMediumPlus"),
+      truthConfirmed: sum("truthConfirmed"),
+      extraTried: sum("extraTried"),
+      extraConfirmed: sum("extraConfirmed"),
       safeTried: safe.length,
       safePassed: safe.filter((p) => p.status === "confirmed").length,
     },

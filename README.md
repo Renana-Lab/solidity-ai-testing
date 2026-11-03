@@ -71,7 +71,7 @@ Model `gemini-3.6-flash`, 9 sample contracts (7 vulnerable, 2 safe), 3 audit run
 | Slither | 5/3/3 | 0.63 | 0.63 | 0.63 |
 | Gemini + Slither | 8/4/0 | 0.67 | 1.00 | 0.80 |
 
-- PoC: 6 of 7 high/critical findings confirmed. The seventh (ReentrancyVault) did run, but the model's expected amount in the assertion was wrong (12 ETH instead of 11), so it stays "unconfirmed". In an earlier run the same finding was confirmed.
+- PoC: 6 of the 7 ground-truth issues of medium severity or worse (4 high, 3 medium; the model rated all of them high, so all got a PoC) were confirmed. The seventh (ReentrancyVault) did run, but the model's expected amount in the assertion was wrong (12 ETH instead of 11), so it stays "unconfirmed". In an earlier run the same finding was confirmed.
 - PoC on the safe contracts: 0 passed (and 0 findings to try). Two negative controls (a real exploit pointed at `SafeVault`, a made-up claim against `SimpleToken`) both failed, as they should.
 - Generated tests: compiled on the first try 8/9, mean pass rate 100%, mean line coverage 100%, branch coverage 100%, 0.33 repairs on average.
 - Stability: 7 of 9 first-run findings appeared in all 3 runs.
@@ -88,7 +88,8 @@ Read these numbers with care: there are only 9 tiny contracts, the ground truth 
 | Gemini TP/FP/FN | 8/1/0 | 8/4/0 |
 | Precision / recall / F1 | 0.89 / 1.00 / 0.94 | 0.67 / 1.00 / 0.80 |
 | Gemini + Slither F1 | 0.80 | 0.70 |
-| PoC confirmed (vulnerable) | 6 of 7 | 8 of 8 (a ninth PoC did not finish, see below) |
+| PoC confirmed, ground-truth issues of medium severity or worse | 6 of 7 | 6 of 7 (ReentrancyVault did not finish, see below) |
+| PoC passed on extra findings (scored as false positives) | 0 of 0 | 2 of 2 (see below) |
 | PoC passed on safe contracts | 0 | 0 |
 | Tests: compiled first try / mean pass rate / line coverage | 8 of 9 / 100% / 100% | 8 of 9 / 100% / 100% |
 | Cost, whole bench | $0.373 (3 audit runs per contract) | $0.672 (1 run per contract) |
@@ -96,9 +97,18 @@ Read these numbers with care: there are only 9 tiny contracts, the ground truth 
 | Time | 683 s | 1004 s |
 | API calls (retries) | 46 (0) | 33 (0) |
 
-What this shows, with care: both models found every planted vulnerability (recall 1.00). Pro reported more extra findings that are not in the ground truth (4 false positives against 1), so its precision is lower here. Pro's exploit tests were confirmed more often (8 of 8 against 6 of 7). Pro costs about 3x more for this work.
+What this shows, with care: both models found every planted vulnerability (recall 1.00). Pro reported more extra findings that are not in the ground truth (4 false positives against 1), so its precision is lower here. Both models had the same PoC result on the ground truth: 6 of 7 confirmed. Pro costs about 3x more for this work.
 
 **The sample is small: 9 contracts, one run each for pro.** A difference of one or two findings is within the run-to-run noise (flash itself lost 2 of 9 findings between repeats). Treat every difference above as indicative only, not as a ranking of the models. Some of pro's "false positives" may be real but minor issues that the hand-written ground truth does not list.
+
+**What the pro PoC number means.** An earlier version of this table said "8 of 8". That counted every pro finding that got a PoC: 6 are ground-truth issues, and 2 are extra findings that were scored as false positives. The ReentrancyVault finding (critical) had no finished PoC. So the right figure for the ground truth is 6 of 7, the same as flash.
+
+**Two pro false positives have a passing PoC**, so they deserve a look before trusting the precision number:
+
+- `TimestampLottery` F-002, "missing access control on `pickWinner`". Its PoC lets an attacker choose the timestamp so that their own ticket wins. That is the known timestamp issue (already a true positive), under a wrong label. `pickWinner()` being public is how this sample works. Probably not a new issue.
+- `UncheckedMath` F-002, "unrestricted minting in `earn`". Its PoC shows that anyone can call `earn(1_000_000 ether)` and then move those points. This is true behaviour of the sample, but the contract has no owner or other notion of who may earn points, so it is a design shortcut of the teaching example rather than the planted bug. Whether the ground truth should list it is your call; `ground-truth.yaml` was not changed.
+
+The other two pro false positives (`UnboundedRefund` and `UnprotectedReset`, both medium) were below the PoC threshold and have no PoC.
 
 On pro's `ReentrancyVault` run, the audit found the right issue, but the PoC step stopped when the model returned cut-off JSON during its second repair. That PoC is counted neither as confirmed nor as failed, and the contract was scored offline from the saved findings. Since then `issues.json` is written before the PoC step, so a PoC failure can no longer drop a contract from the scores.
 

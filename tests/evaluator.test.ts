@@ -57,7 +57,19 @@ describe("aggregate", () => {
       row({ poc: [confirmed, { ...confirmed, findingId: "F-002", status: "unconfirmed" }] }),
       row({ file: "safe/B.sol", kind: "safe", expected: [], llmRuns: [[]], poc: [{ ...confirmed }] }),
     ]);
-    expect(a.poc).toEqual({ vulnerableTried: 2, vulnerableConfirmed: 1, safeTried: 1, safePassed: 1 });
+    expect(a.poc).toMatchObject({ vulnerableTried: 2, vulnerableConfirmed: 1, safeTried: 1, safePassed: 1 });
+  });
+  it("separates PoCs on ground-truth findings from PoCs on extra (FP) findings", () => {
+    const c = { severity: "high", status: "confirmed", repairsUsed: 0, testFile: "", explanation: "", detail: null, passed: 1, failed: 0 } as const;
+    const a = aggregate([
+      row({
+        // F-001 is the ground-truth issue, F-002 an extra access-control finding elsewhere in the file.
+        llmRuns: [[issue({ ref: "F-001" }), issue({ ref: "F-002", category: "access-control", function: "other", startLine: 40, endLine: 44 })]],
+        poc: [{ ...c, findingId: "F-001" }, { ...c, findingId: "F-002" }],
+      }),
+      row({ file: "vulnerable/B.sol" }), // ground truth but no PoC finished
+    ]);
+    expect(a.poc).toMatchObject({ truthMediumPlus: 2, truthConfirmed: 1, extraTried: 1, extraConfirmed: 1 });
   });
   it("sums cost, calls and retries", () => {
     const a = aggregate([row({ costUsd: 0.02, retries: 1 }), row({ costUsd: 0.03, calls: 3 })]);
