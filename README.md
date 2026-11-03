@@ -79,6 +79,33 @@ Model `gemini-3.6-flash`, 9 sample contracts (7 vulnerable, 2 safe), 3 audit run
 
 Read these numbers with care: there are only 9 tiny contracts, the ground truth is written by hand, the model's pre-training may include well-known examples such as reentrancy, and one run is one sample.
 
+## Pro vs flash
+
+`gemini-4-argon` (`--pro`) against `gemini-3.6-flash`, same 9 contracts, same blind audit and ground truth. Scores use the **first** audit run of each contract. Pro ran with `--repeat 1` and a cap of $0.20 per contract; flash is the 3-run bench above.
+
+| | flash (`gemini-3.6-flash`) | pro (`gemini-4-argon`) |
+|---|---|---|
+| Gemini TP/FP/FN | 8/1/0 | 8/4/0 |
+| Precision / recall / F1 | 0.89 / 1.00 / 0.94 | 0.67 / 1.00 / 0.80 |
+| Gemini + Slither F1 | 0.80 | 0.70 |
+| PoC confirmed (vulnerable) | 6 of 7 | 8 of 8 (a ninth PoC did not finish, see below) |
+| PoC passed on safe contracts | 0 | 0 |
+| Tests: compiled first try / mean pass rate / line coverage | 8 of 9 / 100% / 100% | 8 of 9 / 100% / 100% |
+| Cost, whole bench | $0.373 (3 audit runs per contract) | $0.672 (1 run per contract) |
+| Cost for tests + 1 audit run per contract | about $0.20 | $0.672 (about 3.3x) |
+| Time | 683 s | 1004 s |
+| API calls (retries) | 46 (0) | 33 (0) |
+
+What this shows, with care: both models found every planted vulnerability (recall 1.00). Pro reported more extra findings that are not in the ground truth (4 false positives against 1), so its precision is lower here. Pro's exploit tests were confirmed more often (8 of 8 against 6 of 7). Pro costs about 3x more for this work.
+
+**The sample is small: 9 contracts, one run each for pro.** A difference of one or two findings is within the run-to-run noise (flash itself lost 2 of 9 findings between repeats). Treat every difference above as indicative only, not as a ranking of the models. Some of pro's "false positives" may be real but minor issues that the hand-written ground truth does not list.
+
+On pro's `ReentrancyVault` run, the audit found the right issue, but the PoC step stopped when the model returned cut-off JSON during its second repair. That PoC is counted neither as confirmed nor as failed, and the contract was scored offline from the saved findings. Since then `issues.json` is written before the PoC step, so a PoC failure can no longer drop a contract from the scores.
+
+### PoC flakiness
+
+Exploit tests come from the model, so they vary from run to run. The `ReentrancyVault` PoC was **confirmed** in the M4 run but **unconfirmed** in the M5 flash run: the attack worked, but the model wrote the wrong expected amount in its assertion (12 ETH instead of 11). By design a failing assertion is never "repaired" into a pass, so the finding stays unconfirmed. Read "unconfirmed" as "not proven by this attempt", not as "false alarm", and "confirmed" as evidence from one compiled and passing test.
+
 ## Costs
 
 Prices are in `config/pricing.yaml` (per million tokens). Thinking tokens are billed as output. Defaults: `--max-cost 1.00` per run, `bench --max-cost 0.10` per contract and `--max-total-cost 1.00` for the whole bench; when a cap is reached the run stops and still writes a partial report.
@@ -113,7 +140,7 @@ Unit tests never call the real API: they use recorded fixtures in `tests/fixture
 
 - Only single-file contracts with a `pragma` that solc 0.8.24 accepts; no imports from other packages.
 - Findings are matched by category and location; unusual but correct findings may count as false positives.
-- The `--pro` model comparison is not part of the numbers above yet.
+- Gemini answers vary from run to run (see "PoC flakiness"); one bench is one sample.
 - Gemini model names and prices change often; check `config/pricing.yaml` before a large run.
 
 ## Credit
