@@ -43,7 +43,7 @@ export function renderEvaluation(b: BenchResult): string {
       ] as Array<[string, Scores | null]>
     ).map(([n, s]) => `| ${n} | ${s ? `${s.tp}/${s.fp}/${s.fn}` : "n/a"} | ${f2(s?.precision ?? null)} | ${f2(s?.recall ?? null)} | ${f2(s?.f1 ?? null)} |`),
     "",
-    `- PoC confirmation of the ground truth: **${a.poc.truthConfirmed} of ${a.poc.truthMediumPlus}** ground-truth issues of medium severity or worse (the model rated them high, so they got a PoC) were confirmed by a passing exploit test.`,
+    `- PoC confirmation of the ground truth: **${a.poc.truthConfirmed} of ${a.poc.truthMediumPlus}** ground-truth issues of medium severity or worse were confirmed by a passing exploit test.`,
     `- PoC on extra findings (not in the ground truth, scored as false positives): ${a.poc.extraConfirmed} of ${a.poc.extraTried} passed. Read these PoCs: each is either a mislabelled known issue or a real issue the ground truth lacks.`,
     `- PoC on safe contracts: **${a.poc.safePassed}** passed by mistake (${a.poc.safeTried} tried; must be 0).`,
     `- Generated tests (${a.tests.contracts} contracts): compiled on the first try ${a.tests.compiledFirstTry}/${a.tests.contracts}, mean pass rate ${p1(a.tests.meanPassRate)}, mean line coverage ${p1(a.tests.meanLineCoverage)}, mean branch coverage ${p1(a.tests.meanBranchCoverage)}, mean repairs ${f2(a.tests.meanRepairs)}.`,

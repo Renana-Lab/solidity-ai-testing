@@ -23,6 +23,16 @@ contracts:
         function: spend
         lines: [14, 18]
         severity: high
+      # Secondary finding, ADDED AFTER EVALUATION (2026-11-03). Discovered by gemini-4-argon in the
+      # M5 pro bench (finding F-002) and confirmed by a passing PoC: anyone can call earn() with
+      # any amount, and the contract has no owner or other limit on who may earn points. It is a
+      # design shortcut of this teaching sample, not the planted bug, hence medium. It was not in
+      # the ground truth when the flash and pro runs were made, so it slightly favours pro in
+      # those scores (flash did not report it, so flash gets one more false negative).
+      - category: access-control
+        function: earn
+        lines: [10, 12]
+        severity: medium
   - file: vulnerable/TxOriginWallet.sol
     findings:
       - category: tx-origin
